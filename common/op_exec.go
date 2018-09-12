@@ -9,6 +9,7 @@ import (
 	"strings"
 	"os/exec"
 	"bytes"
+	"math/big"
 	log "github.com/Sirupsen/logrus"
 
 )
@@ -200,6 +201,13 @@ func convertQuardsToInt(splits []string) []int {
 
 	return quardsInt
 }
+
+func InetAtoN(ip string) int64 {
+	ret := big.NewInt(0)
+	ret.SetBytes(net.ParseIP(ip).To4())
+	return ret.Int64()
+}
+
 func GetNumberIPAddresses(networkSize int) int {
 	return 2 << uint(31-networkSize)
 }

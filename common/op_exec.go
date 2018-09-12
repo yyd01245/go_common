@@ -203,16 +203,16 @@ func convertQuardsToInt(splits []string) []int {
 func GetNumberIPAddresses(networkSize int) int {
 	return 2 << uint(31-networkSize)
 }
-func GetCidrIpRange(cidr string) (string, string) {
+func GetCidrIpRange(cidr string) (string, string,int) {
 	log.Debugf("check ip valid: %v",cidr)
 	ipv4, ipv4Net, err := net.ParseCIDR(cidr)
 	if err != nil {
 		log.Errorf("check IP valid err:%v",err)
-		return "",""
+		return "","",0
 	}
 	ipv4Value := ipv4.To4()
 	if ipv4Value == nil {
-		return "",""
+		return "","",0
 	}
 	ipBegin := ipv4Value.String()
 
@@ -228,7 +228,7 @@ func GetCidrIpRange(cidr string) (string, string) {
 	networkRangeQuads = append(networkRangeQuads, fmt.Sprintf("%d", (networkQuads[2]&(subnet_mask>>8))+(((numberIPAddress-1)>>8)&0xFF)))
 	networkRangeQuads = append(networkRangeQuads, fmt.Sprintf("%d", (networkQuads[3]&(subnet_mask>>0))+(((numberIPAddress-1)>>0)&0xFF)))
 
-	return ipBegin,strings.Join(networkRangeQuads, ".")
+	return ipBegin,strings.Join(networkRangeQuads, "."),numberIPAddress
 
 }
 

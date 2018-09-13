@@ -62,7 +62,7 @@ func (w *Writer) Write(record []string) error {
 			var err error
 			switch r1 {
 			case '"':
-				fmt.Println("============= write \" !!!!")
+				// fmt.Println("============= write \" !!!!")
 				_, err = w.w.WriteString(``)
 			case '\r':
 				if !w.UseCRLF {

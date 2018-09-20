@@ -509,7 +509,7 @@ func NetDelRoutePatch(link NT.Link,dstRoutes []string,tableID int,scope int,gwIP
 	}
 
 	routes, err := NT.RouteListFiltered(NT.FAMILY_V4, &route, 
-			NT.RT_FILTER_TABLE|NT.RT_FILTER_SCOPE)
+			NT.RT_FILTER_TABLE|NT.RT_FILTER_SCOPE|NT.RT_FILTER_GW)
 	if err != nil {
 		txt := fmt.Sprintf("RouteListFiltered error:%v",err)
 		log.Errorf(txt)

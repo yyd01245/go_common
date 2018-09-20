@@ -495,7 +495,7 @@ func NetVerifyRoutePatch(link NT.Link,dstRoutes []string,tableID int,scope int,g
 	return nil
 }
 
-// 批量删除路由，进行匹配保留项，排查 scope
+// 批量删除路由，进行匹配需要删除的数据，排查 scope
 func NetDelRoutePatch(link NT.Link,dstRoutes []string,tableID int,scope int,gwIP string) error{
 	total := 0
 	gw := net.ParseIP(gwIP)
@@ -529,7 +529,7 @@ func NetDelRoutePatch(link NT.Link,dstRoutes []string,tableID int,scope int,gwIP
 				break
 			}
 		}
-		if flag {
+		if !flag {
 			continue
 		}
 		// log.Infof("delete route: %v!",R)

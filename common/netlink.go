@@ -597,6 +597,7 @@ func NetListRouteByLink(link NT.Link,tableID int,scope int,gwIP string) error{
 type OutInfo struct {
 	OutAddr string
 	DevName string
+	Weight  int
 }
 
 func GetRouteMultiPathObject(ipaddr string,outPath []OutInfo,tableID int) (*NT.Route,error) {
@@ -622,6 +623,7 @@ func GetRouteMultiPathObject(ipaddr string,outPath []OutInfo,tableID int) (*NT.R
 			hop := &NT.NexthopInfo{
 				LinkIndex: link.Attrs().Index,
 				Gw:        gw,
+				Hops:      data.Weight,
 			}
 			NexthopList = append(NexthopList,hop)
 		}

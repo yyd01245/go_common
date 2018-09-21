@@ -594,6 +594,116 @@ func NetListRouteByLink(link NT.Link,tableID int,scope int,gwIP string) error{
 	return nil
 }
 
+type OutInfo struct {
+	OutAddr string
+	DevName string
+}
+
+func GetRouteMultiPathObject(ipaddr string,outPath []OutInfo,tableID int) (*NT.Route,error) {
+	_, dst, err := net.ParseCIDR(ipaddr)
+	if err != nil {
+		txt := fmt.Sprintf("check IP valid err:%v",err)
+		log.Errorf(txt)
+		return nil,errors.New(txt)
+	}
+	log.Debugf("dst cidr=%v",dst)
+
+	length := len(outPath)
+	if length > 1 {
+		NexthopList := []*NT.NexthopInfo{}
+
+		for _,data := range outPath {
+			gw := net.ParseIP(data.OutAddr)
+			link,err := GetLinkDevice(data.DevName)
+			if err != nil {
+				log.Errorf("error get device link:%v failed:%v!!!",data.DevName,err)
+				continue
+			}
+			hop := &NT.NexthopInfo{
+				LinkIndex: link.Attrs().Index,
+				Gw:        gw,
+			}
+			NexthopList = append(NexthopList,hop)
+		}
+		log.Debugf("NexthopList:%v",NexthopList)
+		route := &NT.Route{
+			// LinkIndex: link.Attrs().Index,
+			Dst:       dst,
+			// Src:       src,
+			// Gw:       src,
+			// Scope:     unix.RT_SCOPE_LINK,
+			// Priority:  13,
+			Table:     tableID,
+			MultiPath: NexthopList,
+			// Type:      unix.RTN_UNICAST,
+			// Tos:       14,
+		}
+		log.Debugf("--- route: %v",route)
+		return route,nil 
+	}else if length == 1{
+		gw := net.ParseIP(outPath[0].OutAddr)
+		link,err := GetLinkDevice(outPath[0].DevName)
+		if err != nil {
+			txt := fmt.Sprintf("error get device link:%v failed:%v!!!",outPath[0].DevName,err)
+			log.Errorf(txt)
+			return nil,errors.New(txt)
+		}
+		log.Debugf("gw ip=%v",gw)
+		route := &NT.Route{
+			LinkIndex: link.Attrs().Index,
+			Dst:       dst,
+			// Src:       src,
+			Gw:       gw,
+			// Scope:     unix.RT_SCOPE_LINK,
+			// Priority:  13,
+			Table:     tableID,
+			// Type:      unix.RTN_UNICAST,
+			// Tos:       14,
+		}
+		log.Debugf("--- route: %v",route)
+		return route,nil 
+	}
+	txt := fmt.Sprintf("check IP valid err:%v",err)
+	log.Errorf(txt)
+	return nil,errors.New(txt)
+}
+
+// 批量添加路由，不进行匹配直接替换
+func NetReplaceRoutePatch(dstRoutes []string,outData []OutInfo,tableID int) error{
+	total := 0
+	var route *NT.Route
+	for _,ipAddr := range dstRoutes {
+		route,_ = GetRouteMultiPathObject(ipAddr,outData,tableID)
+		if route != nil {
+			break
+		}
+	}
+
+	for _,ipAddr := range dstRoutes {
+		// 
+		_, dst, err := net.ParseCIDR(ipAddr)
+		if err != nil {
+			txt := fmt.Sprintf("check IP valid err:%v",err)
+			log.Errorf(txt)
+			continue
+		}
+		route.Dst = dst
+		if err != nil {
+			log.Errorf("get route from ipAddr:%s error!!",ipAddr)
+			continue
+		}
+		log.Debugf("---repalce route: %v",route)
+		if err := NT.RouteReplace(route); err != nil {
+			txt := fmt.Sprintf("add route error:%v",err)
+			log.Errorf(txt)
+			return errors.New(txt)
+		}
+		total++
+	}
+	log.Infof("add route total:%v!",total)
+	return nil
+}
+
 type NetRule struct {
 	Priority          int
 	Family            int
@@ -702,36 +812,24 @@ func NetAddorDelRule(action string,rule *NT.Rule) error {
 	return nil 
 }
 
+func IpNetEqual(ipn1 *net.IPNet, ipn2 *net.IPNet) bool {
+	if ipn1 == ipn2 {
+		return true
+	}
+	if ipn1 == nil || ipn2 == nil {
+		return false
+	}
+	m1, _ := ipn1.Mask.Size()
+	m2, _ := ipn2.Mask.Size()
+	return m1 == m2 && ipn1.IP.Equal(ipn2.IP)
+}
+
 func IsEqualRule(value *NT.Rule,rule *NT.Rule) bool {
 	flag := false
-	if value.Src==nil || rule.Src==nil {
-		if value.Src==nil && rule.Src==nil {
-			flag = true
-		}
-	}else if value.Src !=nil && rule.Src != nil {
-		if  value.Src.String() == rule.Src.String() {
-			flag = true
-		}
-	}
-	if !flag {
-		return flag
-	}
-	flag = false
-	if value.Dst==nil || rule.Dst==nil {
-		if value.Dst==nil && rule.Dst==nil {
-			flag = true
-		}
-	}else if value.Dst !=nil && rule.Dst != nil {
-		if  value.Src.String() == rule.Dst.String() {
-			flag = true
-		}
-	}
-	if !flag {
-		return flag
-	}
-	flag = false
 
 	if value.Table == rule.Table &&
+		IpNetEqual(value.Src,rule.Src) && 
+		IpNetEqual(value.Dst,rule.Dst) &&
 		value.Family == rule.Family &&
 		value.TunID == rule.TunID &&
 		value.Flow == rule.Flow &&

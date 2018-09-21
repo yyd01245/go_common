@@ -7,6 +7,9 @@ import (
 	log "github.com/Sirupsen/logrus"	
 	NT "github.com/vishvananda/netlink"
 	// "github.com/vishvananda/netlink/nl"
+	// "reflect"
+	"strings"
+	"strconv"
 	"golang.org/x/sys/unix"
 )
 
@@ -495,7 +498,7 @@ func NetVerifyRoutePatch(link NT.Link,dstRoutes []string,tableID int,scope int,g
 	return nil
 }
 
-// 批量删除路由，进行匹配需要删除的数据，排查 scope
+// 批量删除路由，进行匹配保留项，排查 scope
 func NetDelRoutePatch(link NT.Link,dstRoutes []string,tableID int,scope int,gwIP string) error{
 	total := 0
 	gw := net.ParseIP(gwIP)
@@ -589,4 +592,244 @@ func NetListRouteByLink(link NT.Link,tableID int,scope int,gwIP string) error{
 	log.Infof("route list len: %v",len(routes))
 	
 	return nil
+}
+
+type NetRule struct {
+	Priority          int
+	Family            int
+	Table             int
+	Mark              int
+	Mask              int
+	TunID             uint
+	Goto              int
+	Src               *net.IPNet
+	Dst               *net.IPNet
+	Flow              int
+	IifName           string
+	OifName           string
+	SuppressIfgroup   int
+	SuppressPrefixlen int
+	Invert            bool
+}
+
+func NetGetRuleObject(data NetRule) *NT.Rule {
+	rule := NT.NewRule()
+	rule.Table = data.Table
+	rule.Src = data.Src
+	rule.Dst = data.Dst
+	rule.Priority = data.Priority
+	rule.OifName = data.OifName
+	rule.IifName = data.IifName
+	rule.Invert = data.Invert
+	rule.Mark = data.Mark
+	return rule
+}
+
+
+func GetTableIDFromName(name string) int {
+	tables,err := ReadFileAll("/etc/iproute2/rt_tables")
+	if err != nil {
+		log.Errorf("read routes get failed: %v",err)
+		return -1
+	}
+	tablesLine := strings.Split(tables,"\n")
+	for _,value := range tablesLine {
+		if value == "" || ([]byte(value))[0] == '#' {
+			continue
+		}
+		log.Infof("get tables: %v",value)
+		for index,v := range []byte(value) {
+			log.Debugf("=====index:%d,%c!",index,v)
+		}
+		if strings.Index(value,name) > 0 {
+			// 尝试 水平定位符号 分割
+			data := []string{}
+			data = strings.Split(value,"	")
+			if len(data) != 2{
+				log.Errorf("tables route first error: %v,len=%v",data,len(data))
+				data = strings.Split(value," ")
+				if len(data) != 2{
+					log.Errorf("tables route sencode error: %v,len=%v",data,len(data))
+					continue
+				}
+			}
+			if data[1] == name {
+				id, _ := strconv.Atoi(data[0])
+				return id
+			}
+		}
+
+	}
+	return -1
+}
+
+func NetGetRuleObjectList(dstRule []NetRule) []*NT.Rule {
+// 注意 外部的默认值是 0 的话，会修改数据，数值的默认值为 -1
+	ruleList := []*NT.Rule{}
+	for _,data := range dstRule {
+		rule := NT.NewRule()
+		rule.Table = data.Table
+		rule.Src = data.Src
+		rule.Dst = data.Dst
+		rule.Priority = data.Priority
+		rule.OifName = data.OifName
+		rule.IifName = data.IifName
+		rule.Invert = data.Invert
+		rule.Mark = data.Mark
+		ruleList = append(ruleList,rule)
+	}
+	return ruleList
+}
+
+
+func NetAddorDelRule(action string,rule *NT.Rule) error {
+	if rule == nil {
+		txt := "NetAddorDelRule rule is nil"
+		log.Errorf(txt)
+		return errors.New(txt)
+	}
+	if action == "add" {
+		if err := NT.RuleAdd(rule); err != nil {
+			log.Errorf("NetAddorDelRule add rule error: %v",err)
+			return err
+		}
+	}else {
+		if err := NT.RuleDel(rule); err != nil {
+			log.Errorf("NetAddorDelRule del rule error: %v",err)
+			return err
+		}
+	}
+	return nil 
+}
+
+func IsEqualRule(value *NT.Rule,rule *NT.Rule) bool {
+	flag := false
+	if value.Src==nil || rule.Src==nil {
+		if value.Src==nil && rule.Src==nil {
+			flag = true
+		}
+	}else if value.Src !=nil && rule.Src != nil {
+		if  value.Src.String() == rule.Src.String() {
+			flag = true
+		}
+	}
+	if !flag {
+		return flag
+	}
+	flag = false
+	if value.Dst==nil || rule.Dst==nil {
+		if value.Dst==nil && rule.Dst==nil {
+			flag = true
+		}
+	}else if value.Dst !=nil && rule.Dst != nil {
+		if  value.Src.String() == rule.Dst.String() {
+			flag = true
+		}
+	}
+	if !flag {
+		return flag
+	}
+	flag = false
+
+	if value.Table == rule.Table &&
+		value.Family == rule.Family &&
+		value.TunID == rule.TunID &&
+		value.Flow == rule.Flow &&
+		value.SuppressIfgroup == rule.SuppressIfgroup &&
+		value.SuppressPrefixlen == rule.SuppressPrefixlen &&
+		value.OifName == rule.OifName &&
+		value.Priority == rule.Priority &&
+		value.IifName == rule.IifName &&
+		value.Mark == rule.Mark &&
+		value.Goto == rule.Goto &&
+		value.Mask == rule.Mask &&
+		value.Invert == rule.Invert {
+		flag = true
+		log.Debugf("find rule: %v",rule)
+	}
+
+	return flag
+}
+
+// NetVerifyExistRuleList 校验 rulelist 规则存在，没有则增加
+func NetVerifyExistRuleList(dstRules []*NT.Rule) error {
+	// 
+	rules, err := NT.RuleList(unix.AF_INET)
+	if err != nil {
+		log.Errorf("ListAllRule error:%v",err)
+		return err
+	}
+
+	log.Infof("---list len=%d!",len(rules))
+	// find this rule
+	for i,value := range rules {
+		log.Debugf("index:%v,table:%v,Src:%v,Dst:%v,OifName:%v,Prio:%v,IifName:%v,Invert:%v,mark:%v,goto:%v! rule:%v!",
+		i,value.Table,value.Src,value.Dst,value.OifName,value.Priority,
+		value.IifName,value.Invert,value.Mark,value.Goto,value)
+		for index,rule := range dstRules{
+			if IsEqualRule(&value,rule) {
+				log.Infof("find rule: %v",rule)
+				dstRules = append(dstRules[:index],dstRules[index+1:]...)
+				break
+			}
+		}
+	}
+	total := 0
+	for _,rule := range dstRules{
+		log.Infof("need add rule :%v",rule)
+		NetAddorDelRule("add",rule)
+		total++
+	}
+	log.Infof("add rule total: %v",total)
+	return nil 
+}
+
+// NetVerifyNotExistRuleList 校验 rulelist 规则不存在，有则删除
+func NetVerifyNotExistRuleList(dstRules []*NT.Rule) error {
+	// 
+	rules, err := NT.RuleList(unix.AF_INET)
+	if err != nil {
+		log.Errorf("ListAllRule error:%v",err)
+		return err
+	}
+	log.Infof("---list len=%d, dstrule len=%d!",len(rules),len(dstRules))
+	// find this rule
+	total := 0
+	for i,value := range rules {
+		log.Debugf("index:%v,table:%v,Src:%v,Dst:%v,OifName:%v,Prio:%v,IifName:%v,Invert:%v,mark:%v,goto:%v! rule:%v!",
+		i,value.Table,value.Src,value.Dst,value.OifName,value.Priority,
+		value.IifName,value.Invert,value.Mark,value.Goto,value)
+		find := false
+		for index,rule := range dstRules{
+			if IsEqualRule(&value,rule) {
+				find = true
+				log.Infof("find rule: %v",rule)
+				dstRules = append(dstRules[:index],dstRules[index+1:]...)
+				break
+			}
+		}
+		if find {
+			// delete 
+			total++
+			log.Infof("need del rule :%v",value)
+			NetAddorDelRule("del",&value)
+		}
+	}
+	log.Infof("delete rule total: %v",total)
+	return nil
+}
+
+func ListAllRule() {
+	rules, err := NT.RuleList(unix.AF_INET)
+	if err != nil {
+		log.Errorf("ListAllRule error:%v",err)
+		return
+	}
+	log.Infof("---list rule len=%d!",len(rules))
+	// find this rule
+	for i := range rules {
+		log.Infof("index:%v,table:%v,Src:%v,Dst:%v,OifName:%v,Prio:%v,IifName:%v,Invert:%v,mark:%v,goto:%v! rule:%v!",
+		i,rules[i].Table,rules[i].Src,rules[i].Dst,rules[i].OifName,rules[i].Priority,
+		rules[i].IifName,rules[i].Invert,rules[i].Mark,rules[i].Goto,rules[i])
+	}
 }

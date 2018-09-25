@@ -790,6 +790,11 @@ func NetGetRuleObjectList(dstRule []NetRule) []*NT.Rule {
 		rule.Mark = data.Mark
 		ruleList = append(ruleList,rule)
 	}
+	// for i := range ruleList {
+	// 	log.Infof("index:%v,table:%v,Src:%v,Dst:%v,OifName:%v,Prio:%v,IifName:%v,Invert:%v,mark:%v,goto:%v,mask=%v! rule:%v!",
+	// 	i,ruleList[i].Table,ruleList[i].Src,ruleList[i].Dst,ruleList[i].OifName,ruleList[i].Priority,
+	// 	ruleList[i].IifName,ruleList[i].Invert,ruleList[i].Mark,ruleList[i].Goto,ruleList[i].Mask,ruleList[i])
+	// }
 	return ruleList
 }
 
@@ -828,6 +833,40 @@ func IpNetEqual(ipn1 *net.IPNet, ipn2 *net.IPNet) bool {
 
 func IsEqualRule(value *NT.Rule,rule *NT.Rule) bool {
 	flag := false
+	// if value.SuppressIfgroup != rule.SuppressIfgroup {
+	// 	log.Infof("SuppressIfgroup not equal: %v,%v",value.SuppressIfgroup,rule.SuppressIfgroup)
+	// 	return false
+	// }
+	// if value.SuppressPrefixlen != rule.SuppressPrefixlen {
+	// 	log.Infof("SuppressPrefixlen not equal: %v,%v",value.SuppressPrefixlen,rule.SuppressPrefixlen)
+	// 	return false
+	// }
+	// if value.Family != rule.Family {
+	// 	log.Infof("Family not equal: %v,%v",value.Family,rule.Family)
+	// 	return false
+	// }
+	// if value.TunID != rule.TunID {
+	// 	log.Infof("TunID not equal: %v,%v",value.TunID,rule.TunID)
+	// 	return false
+	// }
+
+	// if value.Flow != rule.Flow {
+	// 	log.Infof("Flow not equal: %v,%v",value.Flow,rule.Flow)
+	// 	return false
+	// }
+	// if !IpNetEqual(value.Src,rule.Src) || !IpNetEqual(value.Dst,rule.Dst) {
+	// 	log.Infof("IpNetEqual not equal:")
+	// 	return false
+	// }
+	// if value.Mark != rule.Mark {
+	// 	log.Infof("Mark not equal: %v,%v",value.Mark,rule.Mark)
+	// 	return false
+	// }
+	// amd64 !=
+	// if value.Mask != rule.Mask {
+	// 	log.Infof("Mask not equal: %v,%v",value.Mask,rule.Mask)
+	// 	return false
+	// }
 
 	if value.Table == rule.Table &&
 		IpNetEqual(value.Src,rule.Src) && 
@@ -842,7 +881,8 @@ func IsEqualRule(value *NT.Rule,rule *NT.Rule) bool {
 		value.IifName == rule.IifName &&
 		value.Mark == rule.Mark &&
 		value.Goto == rule.Goto &&
-		value.Mask == rule.Mask &&
+		// amd64 mask error
+		// value.Mask == rule.Mask &&
 		value.Invert == rule.Invert {
 		flag = true
 		log.Debugf("find rule: %v",rule)
@@ -859,13 +899,13 @@ func NetVerifyExistRuleList(dstRules []*NT.Rule) error {
 		log.Errorf("ListAllRule error:%v",err)
 		return err
 	}
-
+	log.Infof("dstRules:%v!",dstRules)
 	log.Infof("---list len=%d!",len(rules))
 	// find this rule
 	for i,value := range rules {
-		log.Debugf("index:%v,table:%v,Src:%v,Dst:%v,OifName:%v,Prio:%v,IifName:%v,Invert:%v,mark:%v,goto:%v! rule:%v!",
+		log.Debugf("index:%v,table:%v,Src:%v,Dst:%v,OifName:%v,Prio:%v,IifName:%v,Invert:%v,mark:%v,goto:%v,mask=%v! rule:%v!",
 		i,value.Table,value.Src,value.Dst,value.OifName,value.Priority,
-		value.IifName,value.Invert,value.Mark,value.Goto,value)
+		value.IifName,value.Invert,value.Mark,value.Goto,value.Mask,value)
 		for index,rule := range dstRules{
 			if IsEqualRule(&value,rule) {
 				log.Infof("find rule: %v",rule)
@@ -928,9 +968,9 @@ func ListAllRule() {
 	log.Infof("---list rule len=%d!",len(rules))
 	// find this rule
 	for i := range rules {
-		log.Infof("index:%v,table:%v,Src:%v,Dst:%v,OifName:%v,Prio:%v,IifName:%v,Invert:%v,mark:%v,goto:%v! rule:%v!",
+		log.Infof("index:%v,table:%v,Src:%v,Dst:%v,OifName:%v,Prio:%v,IifName:%v,Invert:%v,mark:%v,goto:%v,mask:%v! rule:%v!",
 		i,rules[i].Table,rules[i].Src,rules[i].Dst,rules[i].OifName,rules[i].Priority,
-		rules[i].IifName,rules[i].Invert,rules[i].Mark,rules[i].Goto,rules[i])
+		rules[i].IifName,rules[i].Invert,rules[i].Mark,rules[i].Goto,rules[i].Mask,rules[i])
 	}
 }
 

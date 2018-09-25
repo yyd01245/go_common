@@ -758,10 +758,10 @@ func GetTableIDFromName(name string) int {
 			data := []string{}
 			data = strings.Split(value,"	")
 			if len(data) != 2{
-				log.Errorf("tables route first error: %v,len=%v",data,len(data))
+				// log.Errorf("tables route first error: %v,len=%v",data,len(data))
 				data = strings.Split(value," ")
 				if len(data) != 2{
-					log.Errorf("tables route sencode error: %v,len=%v",data,len(data))
+					log.Errorf("tables route error: %v,len=%v",data,len(data))
 					continue
 				}
 			}
@@ -776,7 +776,7 @@ func GetTableIDFromName(name string) int {
 }
 
 func NetGetRuleObjectList(dstRule []NetRule) []*NT.Rule {
-// 注意 外部的默认值是 0 的话，会修改数据，数值的默认值为 -1
+	// 注意 外部的默认值是 0 的话，会修改数据，数值的默认值为 -1
 	ruleList := []*NT.Rule{}
 	for _,data := range dstRule {
 		rule := NT.NewRule()
@@ -932,4 +932,74 @@ func ListAllRule() {
 		i,rules[i].Table,rules[i].Src,rules[i].Dst,rules[i].OifName,rules[i].Priority,
 		rules[i].IifName,rules[i].Invert,rules[i].Mark,rules[i].Goto,rules[i])
 	}
+}
+
+// UpdateRouteTable 包含创建，删除，更新路由表，"add","del", add 是 tableid 不一致则更新最新的ID
+func UpdateRouteTable(action string,tableName string, tableID int) error {
+	// 判断是否存在
+	const TABLE_FILE = "/etc/iproute2/rt_tables"
+	tables,err := ReadFileAll(TABLE_FILE)
+	if err != nil {
+		log.Errorf("read routes get failed: %v",err)
+		return err
+	}
+	tablesLine := strings.Split(tables,"\n")
+	flag := false
+	log.Infof("before update tablesLine:%v,len=%d",tablesLine,len(tablesLine))
+	length := len(tablesLine)
+	if tablesLine[length-1] == "" {
+		tablesLine = tablesLine[:length-1]
+	}
+	for index,value := range tablesLine {
+		if value == "" || ([]byte(value))[0] == '#' {
+			continue
+		}
+		log.Infof("get tables: %v",value)
+		for index,v := range []byte(value) {
+			log.Debugf("=====index:%d,%c!",index,v)
+		}
+		if strings.Index(value,tableName) > 0 {
+			// 尝试 水平定位符号 分割
+			data := []string{}
+			data = strings.Split(value,"	")
+			if len(data) != 2{
+				// log.Errorf("tables route first error: %v,len=%v",data,len(data))
+				data = strings.Split(value," ")
+				if len(data) != 2{
+					log.Errorf("tables route error: %v,len=%v",data,len(data))
+					continue
+				}
+			}
+			if data[1] == tableName {
+				id, _ := strconv.Atoi(data[0])
+				if action == "add" && id == tableID {
+					flag = true
+				}else if action == "add" && id != tableID && tableID > 0 {
+					// 需要更新
+					// 删除
+					tablesLine = append(tablesLine[:index],tablesLine[index+1:]...)
+				}else if action == "del" {
+					// 删除
+					tablesLine = append(tablesLine[:index],tablesLine[index+1:]...)
+					flag = true
+					break;
+				}
+			}
+		}
+
+	}
+	log.Infof("after update tablesLine:%v,len=%d",tablesLine,len(tablesLine))
+	if action == "add" && !flag {
+		// 增加
+		txt := fmt.Sprintf("%d %s",tableID,tableName)
+		tablesLine = append(tablesLine,txt)
+	}
+	log.Infof("after over tablesLine:%v,len=%d",tablesLine,len(tablesLine))
+
+	// 重新写入
+	err = WriteListLineToFile(TABLE_FILE,tablesLine)	
+	if err != nil {
+		return err
+	}
+	return nil
 }

@@ -47,6 +47,31 @@ func WriteListLineToFile(filename string, paramList[]string) error{
 	return nil
 }
 
+func AppendListLineToFile(filename string, paramList[]string) error{
+
+	if len(paramList) == 0 {
+		log.Warnf("write firle paramList len =0")
+		return errors.New("write firle paramList len =0")
+	}
+	file, err := os.OpenFile(filename,os.O_CREATE|os.O_RDWR|os.O_APPEND,0644)
+	if err != nil {
+		log.Warnf("open file failed !")
+		return err
+	}
+	defer file.Close()
+
+	for k,v := range paramList {
+		log.Debug("key=",k," value=",v)
+		text := fmt.Sprintf("%s\n",v)
+		log.Debug("ready to write file=",filename," text=",text)
+		_,err := file.WriteString(text)
+		if err != nil {
+			log.Errorf("write string:%v Error:%v",text,err)
+			return err
+		}
+	}
+	return nil
+}
 
 func ReadFileAll(filename string) (string,error) {
 

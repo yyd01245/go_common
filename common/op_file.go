@@ -47,6 +47,22 @@ func WriteListLineToFile(filename string, paramList[]string) error{
 	return nil
 }
 
+func WriteStringToFile(filename string, text string) error{
+
+	file, err := os.OpenFile(filename,os.O_CREATE|os.O_TRUNC|os.O_WRONLY,0644)
+	if err != nil {
+		log.Warnf("open file failed !")
+		return err
+	}
+	defer file.Close()
+	log.Debugf("ready to write file=",filename," text=",text)
+	_,err = file.WriteString(text)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func AppendListLineToFile(filename string, paramList[]string) error{
 
 	if len(paramList) == 0 {

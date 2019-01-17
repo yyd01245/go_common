@@ -43,7 +43,7 @@ func LinkAddMacVlan(ifName string,parentIfname string) error{
 	log.Infof("---link:%v",link)
 
 	if err := NT.LinkAdd(link); err != nil {
-		log.Errorf("Link Add error: %v",err)
+		log.Errorf("Link Add interface:%v, parent interface:%v error: %v",ifName,parentIfname,err)
 		return err
 	}
 
@@ -113,7 +113,7 @@ func LinkDelMacVlan(ifName string) error{
 		return errors.New(txt)
 	}
 	if err := NT.LinkDel(link); err != nil {
-		log.Errorf("Link Add error: %v",err)
+		log.Errorf("Link Del error: %v",err)
 		return err
 	}
 
@@ -133,6 +133,98 @@ func LinkDelMacVlan(ifName string) error{
 	if flag {
 		log.Errorf("link macvlan del failed!!!")
 		return errors.New("link macvlan del failed!!!")
+	}
+	return nil
+}
+
+func LinkAddVlan(vlanID int,ifName string,parentIfname string) error {
+
+	// list link 
+	links, err := NT.LinkList()
+	if err != nil {
+		log.Errorf("Link list error: %v",err)
+		return err
+	}
+	log.Infof("---links: %v",links)
+	var parent NT.Link
+	for _, l := range links {
+		if l.Attrs().Name == parentIfname {
+			// get parent link
+			parent = l
+		}
+		if l.Attrs().Name == ifName {
+			txt := fmt.Sprintf("ifname link:%v exsit",ifName)
+			log.Infof(txt)
+			return errors.New(txt)
+		}
+	}
+	// &Vlan{LinkAttrs{Name: "bar", ParentIndex: parent.Attrs().Index}, 900})
+	link := &NT.Vlan{
+		LinkAttrs: NT.LinkAttrs{Name: ifName, ParentIndex: parent.Attrs().Index},
+		VlanId: vlanID,
+	}
+	log.Infof("---link:%v",link)
+
+	if err := NT.LinkAdd(link); err != nil {
+		log.Errorf("Link Add interface:%v, parent interface:%v error: %v",ifName,parentIfname,err)
+		return err
+	}
+	_, err = NT.LinkByName(ifName)
+	if err != nil {
+		log.Errorf("Link byname error: %v",err)
+		return err
+	}
+	// up 
+	// NT.LinkSetUp(link)
+	if err = NT.LinkSetUp(link); err != nil {
+		log.Errorf("setup link device:%v error: %v",ifName,err)
+		return err
+	}
+
+	return nil
+}
+
+// SetLinkAddr 绑定地址为 ip/mask
+func SetLinkAddr(ipaddr string,ifName string) error {
+	_, address, err := net.ParseCIDR(ipaddr)
+	if err != nil {
+		txt := fmt.Sprintf("check IP valid err:%v",err)
+		log.Errorf(txt)
+		return errors.New(txt)
+	}
+	var addr = &NT.Addr{IPNet: address}
+
+	link, err := NT.LinkByName(ifName)
+	if err != nil {
+		log.Errorf("Link byname error: %v",err)
+		return err
+	}
+
+	err = NT.AddrAdd(link, addr)
+	if err != nil {
+		log.Errorf("AddrAdd error: %v",err)
+		return err
+	}
+	return nil
+}
+
+func DeleteLink(ifName string) error {
+	var link NT.Link
+
+	link, err := NT.LinkByName(ifName)
+	if err != nil {
+		log.Errorf("find link device:%v error: %v",ifName,err)
+		return err
+	}
+	if err := NT.LinkDel(link); err != nil {
+		log.Errorf("Link Del link error: %v",err)
+		return err
+	}
+	link, err = NT.LinkByName(ifName)
+	if err == nil {
+		txt := fmt.Sprintf("delete link device:%v failed!",ifName)
+		log.Errorf(txt)
+		return errors.New(txt)
 	}
 	return nil
 }
@@ -211,7 +303,7 @@ func NetAddOrDelRouteByLink(action string,route *NT.Route) error{
 	}
 	if action == ADDROUTE {
 		log.Debugf("---add route: %v",route)
-		if err := NT.RouteAdd(route); err != nil {
+		if err := NT.RouteReplace(route); err != nil {
 			txt := fmt.Sprintf("add route error:%v",err)
 			log.Warnf(txt)
 			return errors.New(txt)
@@ -343,6 +435,105 @@ func NetSyncSopeLinkRouteTable(link NT.Link,srcTableID int,dstTableID int) error
 		}
 		total++
 	}
+	log.Infof("delete scope link route total:%v!",total)
+
+	return nil
+}
+
+func NetVerfiyRouteTable(srcTableID int,dstTableID int) error{
+	total := 0
+	// 不检查 default route,校验 scope link 和 明细路由
+	route := NT.Route{
+		Scope: 		unix.RT_SCOPE_LINK|unix.RT_SCOPE_UNIVERSE,
+		Table:     srcTableID,
+	}
+
+	routes, err := NT.RouteListFiltered(NT.FAMILY_V4, &route, 
+			NT.RT_FILTER_TABLE|NT.RT_FILTER_SCOPE)
+	if err != nil {
+		txt := fmt.Sprintf("RouteListFiltered RT_SCOPE_LINK error:%v",err)
+		log.Errorf(txt)
+		return errors.New(txt)
+	}	
+	
+	route = NT.Route{
+		Scope: 		unix.RT_SCOPE_UNIVERSE,
+		Table:     srcTableID,
+	}
+	routesUN, err := NT.RouteListFiltered(NT.FAMILY_V4, &route, 
+		NT.RT_FILTER_TABLE|NT.RT_FILTER_SCOPE)
+	if err != nil {
+		txt := fmt.Sprintf("RouteListFiltered RT_SCOPE_UNIVERSE error:%v",err)
+		log.Errorf(txt)
+		// return errors.New(txt)
+	}	
+	routes = append(routes,routesUN...)
+
+	dstRoute := NT.Route{
+		Scope: 		unix.RT_SCOPE_LINK,
+		Table:     dstTableID,
+	}
+
+	dstRoutes, err := NT.RouteListFiltered(NT.FAMILY_V4, &dstRoute, 
+			NT.RT_FILTER_TABLE|NT.RT_FILTER_SCOPE)
+	if err != nil {
+		txt := fmt.Sprintf("RouteListFiltered RT_SCOPE_LINK error:%v",err)
+		log.Errorf(txt)
+		return errors.New(txt)
+	}	
+	dstRoute = NT.Route{
+		Scope: 		unix.RT_SCOPE_UNIVERSE,
+		Table:     dstTableID,
+	}
+
+	dstRoutesUN, err := NT.RouteListFiltered(NT.FAMILY_V4, &dstRoute, 
+			NT.RT_FILTER_TABLE|NT.RT_FILTER_SCOPE)
+	if err != nil {
+		txt := fmt.Sprintf("RouteListFiltered error:%v",err)
+		log.Errorf(txt)
+		// return errors.New(txt)
+	}	
+	dstRoutes = append(dstRoutes,dstRoutesUN...)
+	
+	for _,R := range routes {
+
+		// log.Infof("----- get route scope link routes: linkIndex:%v,Ilinkindex:%v,Scope:%v,dst:%v,src:%v,gw:%v,MultiPath:%v,Protocol:%v,Priority:%v,Table:%v,Type:%v,Tos:%v,Flags:%v,MplsDst:%v,NewDst:%v,Encap:%v,MTU:%v,AdvMss:%v!!!",
+		// R.LinkIndex,R.ILinkIndex,R.Scope,R.Dst,R.Src,R.Gw,R.MultiPath,R.Protocol,R.Priority,
+		// R.Table,R.Type,R.Tos,R.Flags,R.MPLSDst,R.NewDst,R.Encap,R.MTU,R.AdvMSS)
+		flag := false
+		if R.Dst == nil || (R.Flags == unix.RTNH_F_LINKDOWN ) {
+			// default
+			continue
+		}
+		for index,r := range dstRoutes {
+			if r.Dst == nil {
+				continue
+			}
+			// 找到则 60.191.85.65/32 格式为带掩码
+			if R.Dst.String() == r.Dst.String() {
+				flag = true
+				log.Infof("find route:%v, route:%v",r,R)
+				dstRoutes = append(dstRoutes[:index],dstRoutes[index+1:]...)
+				break
+			}
+		}
+		if flag {
+			continue
+		}
+		// log.Infof("delete route: %v!",R)
+		R.Table = dstTableID 
+		err = NetAddOrDelRouteByLink("add",&R)
+		if err != nil {
+			log.Errorf("add route:%v failed:%v!!",R,err)
+			continue
+		}
+		total++
+	}
+	log.Infof("NetVerfiyRouteTable del route total:%v!",total)
+	total = 0
+	// 添加
+	// log.Infof("last need to delete scope link route:%v,len=%v!",dstRoutes,len(dstRoutes))
+
 	log.Infof("delete scope link route total:%v!",total)
 
 	return nil
@@ -591,6 +782,29 @@ func NetListRouteByLink(link NT.Link,tableID int,scope int,gwIP string) error{
 	log.Infof("route list: %v",routes)
 	log.Infof("route list len: %v",len(routes))
 	
+	return nil
+}
+
+func NetListALLRoute(tableID int,scope int) error{
+
+
+	route := NT.Route{
+		Scope: 		NT.Scope(scope),
+		Table:     tableID,
+	}
+
+	routes, err := NT.RouteListFiltered(NT.FAMILY_V4, &route, 
+			NT.RT_FILTER_TABLE|NT.RT_FILTER_SCOPE)
+	if err != nil {
+		txt := fmt.Sprintf("RouteListFiltered error:%v",err)
+		log.Errorf(txt)
+		return errors.New(txt)
+	}	
+	log.Infof("route list: %v",routes)
+	log.Infof("route list len: %v",len(routes))
+	for i,v := range routes {
+		log.Infof("route index:%d, string:%s,struct:%v",i,v.String(),v)
+	}
 	return nil
 }
 
@@ -944,7 +1158,8 @@ func NetVerifyNotExistRuleList(dstRules []*NT.Rule) error {
 			if IsEqualRule(&value,rule) {
 				find = true
 				log.Infof("find rule: %v",rule)
-				dstRules = append(dstRules[:index],dstRules[index+1:]...)
+				// dstRules = append(dstRules[:index],dstRules[index+1:]...)
+				// 匹配多条
 				break
 			}
 		}
@@ -956,6 +1171,48 @@ func NetVerifyNotExistRuleList(dstRules []*NT.Rule) error {
 		}
 	}
 	log.Infof("delete rule total: %v",total)
+	return nil
+}
+
+// NetSyncPriorityRuleList 
+func NetSyncPriorityRuleList(priority int,dstRules []*NT.Rule) error {
+	// 
+	rules, err := NT.RuleList(unix.AF_INET)
+	if err != nil {
+		log.Errorf("ListAllRule error:%v",err)
+		return err
+	}
+	log.Infof("---list len=%d, dstrule len=%d!",len(rules),len(dstRules))
+	// find this rule
+	total := 0
+	for i,value := range rules {
+		log.Debugf("index:%v,table:%v,Src:%v,Dst:%v,OifName:%v,Prio:%v,IifName:%v,Invert:%v,mark:%v,goto:%v! rule:%v!",
+		i,value.Table,value.Src,value.Dst,value.OifName,value.Priority,
+		value.IifName,value.Invert,value.Mark,value.Goto,value)
+		find := false
+		for index,rule := range dstRules{
+			if IsEqualRule(&value,rule) {
+				find = true
+				log.Infof("find rule: %v",rule)
+				dstRules = append(dstRules[:index],dstRules[index+1:]...)
+				break
+			}
+		}
+		if priority == value.Priority && !find {
+			// delete 
+			total++
+			log.Infof("need del rule :%v",value)
+			NetAddorDelRule("del",&value)
+		}
+	}
+	log.Infof("delete rule total: %v",total)
+	total = 0
+	for _,rule := range dstRules{
+		log.Infof("need add rule :%v",rule)
+		NetAddorDelRule("add",rule)
+		total++
+	}
+	log.Infof("add rule total: %v",total)
 	return nil
 }
 

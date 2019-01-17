@@ -1154,7 +1154,7 @@ func NetVerifyNotExistRuleList(dstRules []*NT.Rule) error {
 		i,value.Table,value.Src,value.Dst,value.OifName,value.Priority,
 		value.IifName,value.Invert,value.Mark,value.Goto,value)
 		find := false
-		for index,rule := range dstRules{
+		for _,rule := range dstRules{
 			if IsEqualRule(&value,rule) {
 				find = true
 				log.Infof("find rule: %v",rule)
